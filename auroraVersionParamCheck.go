@@ -54,7 +54,6 @@ func readInput(stage string) string {
     }
 }
 
-
 func auroraVersionParamCluster(svc *rds.RDS, lines []string, w *tabwriter.Writer, num int64) {
     init_map := make(map[string]string) // 수행시간을 담기 위한 맵
     var count int //반복횟수
@@ -63,10 +62,10 @@ func auroraVersionParamCluster(svc *rds.RDS, lines []string, w *tabwriter.Writer
 
 
     for {
-        fmt.Fprintf(w, "──────────────────────────────────\t ──────────────────────────────────\t ──────────────────────────────────\t ──────────────────────────────────\t ──────────────────────────────────\t\n")
-        fmt.Fprintf(w, " Time│\t Duration|\t Cluster│\t Version│\t Status│\t\n")
-        fmt.Fprintf(w, "──────────────────────────────────\t ──────────────────────────────────\t ──────────────────────────────────\t ──────────────────────────────────\t ──────────────────────────────────\t\n")
-        for _, rinstance_name := range lines {
+        fmt.Fprintf(w, "──────────────────────────────────\t ──────────────────────────────────\t ──────────────────────────────────\t ──────────────────────────────────\t ──────────────────────────────────\t ──────────────────────────────────\t\n")
+        fmt.Fprintf(w, " Time│\t Duration|\t Cluster│\t Version│\t Status│\t Param Status│\t\n")
+        fmt.Fprintf(w, "──────────────────────────────────\t ──────────────────────────────────\t ──────────────────────────────────\t ──────────────────────────────────\t ──────────────────────────────────\t ──────────────────────────────────\t\n")
+        for _, rcluster_name := range lines {
             currentTime := time.Now()
             hour, min, sec := currentTime.Clock()
             millisec := currentTime.Nanosecond() / 1000000
@@ -75,40 +74,45 @@ func auroraVersionParamCluster(svc *rds.RDS, lines []string, w *tabwriter.Writer
             timeString := fmt.Sprintf("%02d:%02d:%02d.%03d", hour, min, sec, millisec)
 
             if count == 1 {
-                init_map[rinstance_name] = timeString //최초 수행된 시간을 맵에 담아놓는다.
+              init_map[rcluster_name] = timeString //최초 수행된 시간을 맵에 담아놓는다.
             } else {
-                first_timeString, exists := init_map[rinstance_name] 
+              first_timeString, exists := init_map[rcluster_name]
 
-                if exists {
-                    first_time, err_firsttime := time.Parse(timeFormat, first_timeString)
-                    after_time, err_aftertime := time.Parse(timeFormat, timeString)
+              if exists {
+                first_time, err_firsttime := time.Parse(timeFormat, first_timeString)
+                after_time, err_aftertime := time.Parse(timeFormat, timeString)
 
-                    if err_firsttime != nil || err_aftertime != nil {
-                        fmt.Printf("Parsing Error: %s %s", err_firsttime, err_aftertime)
-                        return
-                    }
-
-                    duration = after_time.Sub(first_time) //마지막에 수행된 시간에서 최초 수행된 시간의 차를 계산한다.
+                if err_firsttime != nil || err_aftertime != nil {
+                  fmt.Printf("Parsing Error: %s %s", err_firsttime, err_aftertime)
+                  return
                 }
+
+                duration = after_time.Sub(first_time) //마지막에 수행된 시간에서 최초 수행된 시간의 차를 계산한다.
+              }
             }
 
             input := &rds.DescribeDBClustersInput{
-                    DBClusterIdentifier: aws.String(rinstance_name),
+                    DBClusterIdentifier: aws.String(rcluster_name),
                 }
 
             result, err := svc.DescribeDBClusters(input)
 
             if err != nil {
-                fmt.Println("Error", err)
+                fmt.Println("DBCluster Error: ", err)
                 return
             }
 
-            db := result.DBClusters[0]
-            fmt.Fprintf(w, "%s│\t %s|\t %s│\t %s│\t %s│\t\n", timeString, duration, *db.DBClusterIdentifier, *db.EngineVersion, *db.Status)
+            // 클러스터 기본 정보(클러스터명, 엔진 버전, 클러스터 상태)
+            cluster_info := result.DBClusters[0]
+            // DB 클러스터 파라미터 그룹 상태
+            cluster_param := result.DBClusters[0].DBClusterMembers[0]
+
+            // DB 클러스터 및 클러스터 파라미터 정보 출력
+            fmt.Fprintf(w, "%s│\t %s|\t %s│\t %s│\t %s│\t %s│\t\n", timeString, duration, *cluster_info.DBClusterIdentifier, *cluster_info.EngineVersion, *cluster_info.Status, *cluster_param.DBClusterParameterGroupStatus)
 
         }
 
-        fmt.Fprintf(w, "──────────────────────────────────\t ──────────────────────────────────\t ──────────────────────────────────\t ──────────────────────────────────\t ──────────────────────────────────\t\n")
+        fmt.Fprintf(w, "──────────────────────────────────\t ──────────────────────────────────\t ──────────────────────────────────\t ──────────────────────────────────\t ──────────────────────────────────\t ──────────────────────────────────\t\n")
         fmt.Print("\033[2J\033[H")
         w.Flush()
         time.Sleep(time.Duration(num) * time.Millisecond)
@@ -117,15 +121,15 @@ func auroraVersionParamCluster(svc *rds.RDS, lines []string, w *tabwriter.Writer
 }
 
 func auroraVersionParamInstance(svc *rds.RDS, lines []string, w *tabwriter.Writer, num int64) {
-    init_map := make(map[string]string) // 수행시간을 담기 위한 맵
+  init_map := make(map[string]string) // 수행시간을 담기 위한 맵
     var count int //반복횟수
     count = 1
     var duration time.Duration //수행시간
 
     for {
-        fmt.Fprintf(w, "──────────────────────────────────\t ──────────────────────────────────\t ──────────────────────────────────\t ──────────────────────────────────\t ──────────────────────────────────\t\n")
-        fmt.Fprintf(w, " Time│\t Duration│\t Instance│\t Version│\t Status│\t\n")
-        fmt.Fprintf(w, "──────────────────────────────────\t ──────────────────────────────────\t ──────────────────────────────────\t ──────────────────────────────────\t ──────────────────────────────────\t\n")
+        fmt.Fprintf(w, "──────────────────────────────────\t ──────────────────────────────────\t ──────────────────────────────────\t ──────────────────────────────────\t ──────────────────────────────────\t ──────────────────────────────────\t\n")
+        fmt.Fprintf(w, " Time│\t Duration│\t Instance│\t Version│\t Status│\t Param Status│\t\n")
+        fmt.Fprintf(w, "──────────────────────────────────\t ──────────────────────────────────\t ──────────────────────────────────\t ──────────────────────────────────\t ──────────────────────────────────\t ──────────────────────────────────\t\n")
 
         for _, rinstance_name := range lines {
             currentTime := time.Now()
@@ -136,21 +140,21 @@ func auroraVersionParamInstance(svc *rds.RDS, lines []string, w *tabwriter.Write
             timeString := fmt.Sprintf("%02d:%02d:%02d.%03d", hour, min, sec, millisec)
 
             if count == 1 {
-                init_map[rinstance_name] = timeString //최초 수행된 시간을 맵에 담아놓는다.
-            } else {
-                first_timeString, exists := init_map[rinstance_name]
+              init_map[rinstance_name] = timeString //최초 수행된 시간을 맵에 담아놓는다.
+          } else {
+              first_timeString, exists := init_map[rinstance_name]
 
-                if exists {
-                    first_time, err_firsttime := time.Parse(timeFormat, first_timeString)
-                    after_time, err_aftertime := time.Parse(timeFormat, timeString)
+              if exists {
+                first_time, err_firsttime := time.Parse(timeFormat, first_timeString)
+                after_time, err_aftertime := time.Parse(timeFormat, timeString)
 
-                    if err_firsttime != nil || err_aftertime != nil {
-                        fmt.Printf("Parsing Error: %s %s", err_firsttime, err_aftertime)
-                        return
-                    }
-
-                    duration = after_time.Sub(first_time) //마지막에 수행된 시간에서 최초 수행된 시간의 차를 계산한다.
+                if err_firsttime != nil || err_aftertime != nil {
+                  fmt.Printf("Parsing Error: %s %s", err_firsttime, err_aftertime)
+                  return
                 }
+
+                duration = after_time.Sub(first_time) //마지막에 수행된 시간에서 최초 수행된 시간의 차를 계산한다.
+              }
             }
 
             input := &rds.DescribeDBInstancesInput{
@@ -164,11 +168,16 @@ func auroraVersionParamInstance(svc *rds.RDS, lines []string, w *tabwriter.Write
                 return
             }
 
-            instance := result.DBInstances[0]
-            fmt.Fprintf(w, "%s│\t %s│\t %s│\t %s│\t %s│\t\n", timeString, duration, *instance.DBInstanceIdentifier, *instance.EngineVersion, *instance.DBInstanceStatus)
+            // 인스턴스 기본 정보(인스턴스명, 엔진 버전, 인스턴스 상태)
+            instance_info := result.DBInstances[0]
+            // DB 인스턴스 파라미터 그룹 상태
+            instance_param := result.DBInstances[0].DBParameterGroups[0]
+
+            // DB 인스턴스 및 인스턴스 파라미터 정보 출력
+            fmt.Fprintf(w, "%s│\t %s│\t %s│\t %s│\t %s│\t %s│\t\n", timeString, duration, *instance_info.DBInstanceIdentifier, *instance_info.EngineVersion, *instance_info.DBInstanceStatus, *instance_param.ParameterApplyStatus)
         }
 
-        fmt.Fprintf(w, "──────────────────────────────────\t ──────────────────────────────────\t ──────────────────────────────────\t ──────────────────────────────────\t ──────────────────────────────────\t\n")
+        fmt.Fprintf(w, "──────────────────────────────────\t ──────────────────────────────────\t ──────────────────────────────────\t ──────────────────────────────────\t ──────────────────────────────────\t ──────────────────────────────────\t\n")
         fmt.Print("\033[2J\033[H")
         w.Flush()
         time.Sleep(time.Duration(num) * time.Millisecond)
@@ -247,8 +256,8 @@ func main() {
             log.Fatal(err)
         }
 
-        cluster_name := string(content)
-        lines := strings.Split(cluster_name, "\n")
+        instance_name := string(content)
+        lines := strings.Split(instance_name, "\n")
 
         svc := rds.New(sess)
 
